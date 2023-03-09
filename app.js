@@ -12,7 +12,7 @@ const JWT_SECRET=
 "akondfasfdoiwned()asdasndjnanwd{}adc[]]Adsnwnii1232nlka213213kanskdcniwai213124r2314e";
 
 
-const mongoURL ="mongodb+srv://pvnhari2156:Praveenhari2000@cluster0.o6eatlm.mongodb.net/?retryWrites=true&w=majority";
+const mongoURL ="mongodb+srv://username:Password@cluster0.o6eatlm.mongodb.net/?retryWrites=true&w=majority";
 
 mongoose
     .connect(mongoURL,{
