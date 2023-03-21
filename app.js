@@ -7,6 +7,7 @@ app.use(cors());
 const bcrypt = require("bcryptjs");
 app.set("view engine", "ejs");
 app.use(express.urlencoded({ extended: false }));
+const router = express.Router();
 
 const jwt = require("jsonwebtoken");
 var nodemailer = require('nodemailer');
@@ -53,10 +54,10 @@ app.post("/register", async (req, res) => {
             userType,                
         });
         User.save();
-        res.send({ status: "ok" });
+        
 
     } catch (error) {
-        res.send({ status: "error" });
+        res.send({ status: "Registered" });
     }
 
 });
@@ -89,7 +90,7 @@ app.post("/login-user", async (req, res) => {
 
 //get data of user
 
-app.post("/userData", async (req, res) => {
+app.post("/userData",  async (req, res) => {
     const { token } = req.body;
     try {
         const user = jwt.verify(token, JWT_SECRET, (err, res) => {
@@ -207,7 +208,7 @@ app.post("/reset-password/:id/:token", async (req, res) => {
     }
 });
 
-app.get("/getAllUsers",  async(req,res) => {
+app.get("/getAllUsers",   async(req,res) => {
     try {
         const allUser = await User.find({});
         res.send({status: "ok" , data:allUser})
@@ -215,7 +216,40 @@ app.get("/getAllUsers",  async(req,res) => {
     } catch (error) {
         console.log(error)
     }
-})
+});
+
+app.delete("/deleteUser", async  (req,res) => {
+   const {userid} = req.body;
+    try {
+        await User.findByIdAndDelete({ _id: userid });
+        
+        res.send({ status: "Ok", data: "Deleted" });
+        //res.send({status : "User Deleted!!"});
+        //res.send({ status: "OK" , data : "Deleted" });
+    } catch (error) {
+        console.log(error);
+    }
+});
+
+
+
+function adminOnly(req,res,next){
+    const userType =req.body.userType;
+    // Get the authorization header from the request
+    //const {userType} = req.body;
+    if (userType != "Tutor" || "Admin") {
+      // If no authorization header is provided, return an error response
+      return res
+        .status(401)
+        .json({ message: "Authorization header not provided" });
+       
+    }else{
+        res.send("authenticated");
+        next();
+    }
+
+}
+
 
 app.listen(5000, () => {
     console.log("Server Started");
