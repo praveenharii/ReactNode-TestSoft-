@@ -1,29 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-   
+    <title>Forgot Password</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f1f1f1;
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 50px;
+        }
+
+        form {
+            max-width: 400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        input[type="password"] {
+            width: 100%;
+            padding: 12px 20px;
+            margin: 8px 0;
+            box-sizing: border-box;
+            border: 2px solid #ccc;
+            border-radius: 4px;
+        }
+
+        input[type="submit"] {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        input[type="submit"]:hover {
+            background-color: #45a049;
+        }
+
+        .error-message {
+            color: red;
+        }
+    </style>
 </head>
 
-<script>
-        
-       var status = '<%- JSON.stringify(status) %>';
-       if (JSON.parse(status) == "verified"){
+<body>
+    <h1>Forgot Password</h1>
+    <form action="" method="post">
+        <label for="password">New Password:</label>
+        <input required type="password" name="password" placeholder="Enter New Password" id="password" /><br />
+        <label for="confirm-password">Confirm Password:</label>
+        <input required type="password" name="confirm-password" placeholder="Confirm Password"
+            id="confirm-password" /><br />
+        <span class="error-message" id="password-error"></span>
+        <input type="submit" value="Submit" />
+    </form>
+
+    <script>
+        var status = '<%- JSON.stringify(status) %>';
+        if (JSON.parse(status) == "Verified") {
             if (confirm("Do you want to login?")) {
                 window.location.href = "http://localhost:3000/";
             }
         }
 
-</script>
-<body>
-    <h1><%= email%></h1>
-    <form action="" method="post">
-        <input required type="password" name="password" placeholder="Password" id="password" /><br />
-        <input type="password" name="confirm-password" placeholder="Confirm Password" id="confirm-password" /><br />
-        <input type="submit" value="submit" />
-    </form>
+        document.querySelector('form').addEventListener('submit', function (e) {
+            var password = document.querySelector('#password').value;
+            var confirmPassword = document.querySelector('#confirm-password').value;
+            var errorMessage = document.querySelector('#password-error');
+            if (password != confirmPassword) {
+                e.preventDefault();
+                errorMessage.textContent = "Passwords do not match";
+            } else {
+                errorMessage.textContent = "";
+            }
+        });
+    </script>
 </body>
+
 </html>

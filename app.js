@@ -7,6 +7,11 @@ app.use(cors());
 const bcrypt = require("bcryptjs");
 app.set("view engine", "ejs");
 app.use(express.urlencoded({ extended: false }));
+const jsonexport = require("jsonexport");
+const json2xls = require("json2xls");
+const fs = require("fs");
+
+const { Readable } = require("stream");
 const jwt = require("jsonwebtoken");
 const renewToken = require("./middlewares/renewTokenMiddleware");
 const JWT_SECRET =
@@ -37,6 +42,21 @@ const { Exam, Test, Subject } = require("./examSchema");
 const UserTestResults = require("./takeTestSchema");
 
 //const { name } = require("ejs");
+
+//cloudinary
+const cloudinary = require('cloudinary').v2;
+
+
+// Configuration 
+cloudinary.config({
+  cloud_name: "doniesrwl",
+  api_key: "631438745435894",
+  api_secret: "K5hoEBOtcQoF-0etGnFlUJL5jXw"
+});
+
+
+
+
 
 // Send email function
 async function sendEmail(message) {
@@ -122,7 +142,7 @@ app.post("/login-user", async (req, res) => {
     }
 
     else if (user.status === 'verified' && await bcrypt.compare(password, user.password)) {//compare password
-        const token = jwt.sign({ email: user.email }, JWT_SECRET, {
+        const token = jwt.sign({ email: user.email, userType: user.userType, userId: user._id }, JWT_SECRET, {
             // expiresIn: "30s",
         });//create token with random digit above
 
@@ -193,10 +213,13 @@ app.post("/forgot-password", async (req, res) => {
         });
 
         var mailOptions = {
-            from: "youremail@gmail.com",
-            to: "linux2156@gmail.com",
-            subject: 'Password Reset',
-            text:link,
+          from: "youremail@gmail.com",
+          to: email,
+          subject: "Password Reset",
+          html:
+            '<p>Click <a href="' +
+            link +
+            '">here</a> to reset your password.</p>',
         };
 
         transporter.sendMail(mailOptions, function (error, info) {
@@ -207,6 +230,7 @@ app.post("/forgot-password", async (req, res) => {
             }
         });
         console.log(link);
+        return res.json({ status: "Reset Password sent to email, please check your email." });
     } catch (error) {
         console.log(error);
     }
@@ -252,10 +276,10 @@ app.post("/reset-password/:id/:token", async (req, res) => {
             }
         );
 
-        res.json({ status: "Password Updated" });
-        
-        res.render("index", { email: verify.email, status: "Verified" });
-        // res.render('/login-user')
+        res.render("password-updated", {
+          email: verify.email,
+          status: "Verified",
+        });
     } catch (error) {
         console.log(error);
         // res.json({ status: "Something Went Wrong" });
@@ -298,7 +322,7 @@ app.post("/verifyUser", async(req,res) => {
     }
   } catch (err) {
     console.log(err);
-    res.status(500).send("Error updating user status");
+    res.status(500).send({message:"Error updating user status"});
   }
 });
 
@@ -344,37 +368,65 @@ app.delete("/deleteUser", async  (req,res) => {
 
 app.post("/updateProfile/:id", renewToken , async(req, res) => {
 
-    const { fname, lname, password } = req.body;
-    const encryptedPassword = await bcrypt.hash(password, 10);
-    const newToken = req.newToken;
-    try {
-      const id = req.params.id;
-     
-      const data = await User.findByIdAndUpdate(
-        id,
-        {
-          fname: fname,
-          lname: lname,
-          password: encryptedPassword,
-        },
-        { new: true }
-      );
-        console.log(newToken);
-      if (!data) {
-        return res.status(404).send("User not found");
-      }
-   
+  const { fname, lname, phoneNumber, newPassword } = req.body;
+  const newToken = req.newToken;
+  try {
+    const id = req.params.id;
 
-      return res.status(200).json({ status: "ok", data: data , token : newToken});
-      
-    } catch (err) {
-      console.error(err);
-      return res
-        .status(500)
-        .send("An error occurred while updating the profile.");
+    const updateData = {
+      fname: fname,
+      lname: lname,
+      phoneNumber: phoneNumber,
+    };
+
+    if (newPassword) {
+      const encryptedPassword = await bcrypt.hash(newPassword, 10);
+      updateData.password = encryptedPassword;
     }
 
-  
+    const data = await User.findByIdAndUpdate(id, updateData, { new: true });
+    console.log(newToken);
+
+    if (!data) {
+      return res.status(404).send("User not found");
+    }
+
+    return res.status(200).json({ status: "ok", data: data, token: newToken });
+  } catch (err) {
+    console.error(err);
+    return res
+      .status(500)
+      .send("An error occurred while updating the profile.");
+  }
+});
+
+app.post("/checkOldPassword/:email/:oldPassword", async (req, res) => {
+  const { email, oldPassword } = req.params; //request email, password
+
+  const user = await User.findOne({ email }); //check exist or not
+
+  if (!user) {
+    return res.json({ error: "User not exists" });
+  }
+
+  if (user.status === "pending") {
+    return res.json({
+      error:
+        "You are not a verified, please wait for admin to accept your Sign Up request!!!",
+    });
+  } else if (
+    user.status === "verified" &&
+    (await bcrypt.compare(oldPassword, user.password))
+  ) {
+    //compare password
+
+    if (res.status(201)) {
+      return res.json({ status: "ok" });
+    } else {
+      return res.json({ error: "error" });
+    }
+  }
+  res.json({ status: "error", error: "Invalid Password " });
 });
 
 app.post("/createUser", async (req,res) => {
@@ -546,20 +598,20 @@ app.delete("/deleteQuestions", async (req, res) => {
   }
 });
 
-//studentsAPI
+
 app.get("/subTests", async (req, res) => {
   try {
     const subjects = await Subject.find().populate("tests");
-    const tests = subjects.reduce(
-      (acc, subject) => [//accumulates data
-        ...acc,
-        ...subject.tests.map((test) => ({
+
+    const tests = subjects.reduce((acc, subject) => {
+      const upcomingTests = subject.tests
+        .filter((test) => test.date > new Date()) // Filter out tests that are in the past
+        .map((test) => ({
           ...test.toObject(),
           subject: subject.name,
-        })),
-      ],
-      []
-    );
+        }));
+      return [...acc, ...upcomingTests];
+    }, []);
     res.json({ data: tests });
   } catch (err) {
     console.error(err);
@@ -595,15 +647,36 @@ app.get("/studentViewTest/:testid", async (req, res) => {
   }
 });
 
+app.post("/:id/checkUserTakenTest/:taketestid", async (req,res) =>{
+  const userId = req.params.id;
+  const testId = req.params.taketestid;
+ 
+  try {
+     const existingResult = await UserTestResults.findOne({
+       user: userId,
+       test: testId,
+     });
+     if (existingResult) {
+       console.log("User has already taken the test");
+       return res.status(400).send({ message: "You have already taken the test" });
+     }
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).send("Error Take test");
+  }
+})
+
 app.post("/:id/:subjectname/tests/:taketestid/submit", async (req, res) => {
-  const userId = JSON.parse(req.params.id).id;
+  const userId = req.params.id;
   const testId = req.params.taketestid;
   const { answers } = req.body;
   const userAnswers = Object.values(answers);
   const subName = req.params.subjectname;
   console.log(subName);
   const test = await Test.findById(testId);
-  const studentName = await User.findById(userId, "fname lname");
+  const student = await User.findById(userId, "fname lname");
+  const studentName = `${student.fname} ${student.lname}`;
   const testName = await Test.findById(testId, "name");
   console.log(studentName);
   console.log(testName);
@@ -635,9 +708,10 @@ app.post("/:id/:subjectname/tests/:taketestid/submit", async (req, res) => {
     user: userId,
     username: studentName,
     test: testId,
-    testname: testName,
+    testname: testName.name,
     subject: subName,
     score: score,
+    totalQuestions: test.questions.length,
     percentageScore: TotalPercentageScore,
   });
 
@@ -659,46 +733,208 @@ app.get("/getAllStudentResults", async (req,res) => {
   } catch (error) {
     
   }
+});
+
+app.get("/getNumbersOfUsers" , async(req,res) => {
+  try {
+     const users = await User.aggregate([
+       { $group: { _id: "$userType", count: { $sum: 1 } } },
+     ]);
+     res.status(200).json(users);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
 })
 
-// app.post("/getAllStudentResults", async (req,res) => {
-//   try {
-//     const allStudentResults = await UserTestResults.aggregate([
-//       {
-//         $lookup: {
-//           from: "UserInfo",
-//           localField: "user",
-//           foreignField: "_id",
-//           as: "user",
-//         },
-//       },
-//       {
-//         $lookup: {
-//           from: "Test",
-//           localField: "test",
-//           foreignField: "_id",
-//           as: "test",
-//         },
-//       },
-//       {
-//         $project: {
-//           _id: 1,
-//           score: 1,
-//           percentageScore: 1,
-//           date: 1,
-//           "user.fname": 1,
-//           "test.name": 1,
-//         },
-//       },
-//     ]);
 
-//     console.log(allStudentResults);
-//     res.status(200).send({ data: allStudentResults });
+app.post("/getStudentResults", async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const studentResults = await UserTestResults.find({ user: userId });
+    res.status(200).json({ studentResults });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+
+app.post("/editStudentScore/:selectedResultID", async (req, res) => {
+  const selectedResultID = req.params.selectedResultID;
+  const userPercentageScore = req.body.score;
+  console.log(selectedResultID, userPercentageScore);
+
+  try {
+    const result = await UserTestResults.findById(selectedResultID);
+
+    if (!result) {
+      return res.status(404).send("Could not find result");
+    }
+
+    const totalQuestions = result.totalQuestions;
+    const newScore = Math.round((userPercentageScore / 100) * totalQuestions);
+
+    const updatedResult = await UserTestResults.findByIdAndUpdate(
+      selectedResultID,
+      {
+        percentageScore: userPercentageScore,
+        score: newScore,
+      },
+      { new: true }
+    );
+
+    if (!updatedResult) {
+      return res.status(404).send("Could not update result");
+    }
+
+    res.send(updatedResult);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).send("An error occurred while updating the score.");
+  }
+});
+
+app.delete("/deleteStudentResult/:selectedResultID", async (req, res) => {
+  const selectedResultID = req.params.selectedResultID;
+  try {
+    const deletedResult = await UserTestResults.findByIdAndDelete(
+      selectedResultID
+    );
+    if (!deletedResult) {
+      return res.status(404).send("Could not delete result");
+    }
+    return res.send("Result deleted successfully");
+  } catch (error) {
+    console.error(error);
+    return res.status(500).send("An error occurred while deleting the result.");
+  }
+});
+
+app.post("/updateQuestions/:testName/:testid", async (req, res) => {
+  try {
+    const { testName, testid } = req.params;
+    const { test } = req.body;
+    console.log(test);
+    const existingTest = await Test.findOneAndUpdate(
+      {
+        _id: testid,
+      },
+      {
+         name : test.name,
+        date: test.date,
+        timeLimit: test.timeLimit,
+        questions: test.questions 
+      },
+      { new: true }
+    );
+
+    if (existingTest) {
+      res.json({ status: "Questions updated", success: true });
+    } else {
+      res.json({ status: "Test not found", success: false });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/downloadResults/:subjectName/:testName", async (req, res) => {
+  try {
+    const { subjectName, testName } = req.params;
+
+     const userTestResults = await UserTestResults.find(
+       { subject: subjectName, testname: testName },
+       { username: 1, score: 1, percentageScore: 1, totalQuestions:1, date: 1, _id: 0 }
+     );
+     
+     const flattenedResults = userTestResults.map((result) => {
+      const scoreFraction = `${result.score} Out of ${result.totalQuestions}`;
+       return {
+         username: result.username,
+         score: scoreFraction,
+         percentageScore: result.percentageScore,
+         date: result.date,
+       };
+     });
+
+     // Convert the flattened results to CSV format using jsonexport
+     const csvData = await new Promise((resolve, reject) => {
+       jsonexport(flattenedResults, (err, csv) => {
+         if (err) {
+           reject(err);
+         } else {
+           resolve(csv);
+         }
+       });
+     });
+
+     // Create a readable stream from the CSV data
+     const stream = new Readable();
+     stream.push(csvData);
+     stream.push(null);
+
+     // Upload the CSV stream to Cloudinary
+     const cloudinaryUploadResult = await cloudinary.uploader.upload_stream(
+       {
+         folder: "results",
+         resource_type: "raw",
+         public_id: `${subjectName}_${testName}_${Date.now()}.csv`,
+         format: "csv",
+       },
+       (error, result) => {
+         if (error) {
+           console.error(error);
+           res.status(500).json({ error: "Internal server error" });
+         } else {
+           // Get the secure URL of the uploaded file
+           const secureUrl = result.secure_url;
+
+           // Set the response headers for downloading the file
+           res.setHeader("Content-Type", "application/octet-stream");
+           res.setHeader(
+             "Content-Disposition",
+             `attachment; filename=${result.original_filename}`
+           );
+
+           // Redirect to the secure URL for downloading the file
+           res.redirect(secureUrl);
+         }
+       }
+     );
+
+     // Pipe the stream to the Cloudinary uploader
+     stream.pipe(cloudinaryUploadResult);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+});
+// app.post("/editStudentScore/:selectedResultID", async (req,res) => {
+//   const selectedResultID = req.params.selectedResultID;
+//   const userResults= req.body.score;
+//   console.log(selectedResultID, userResults);
+//   try {
+//      const data = await UserTestResults.findByIdAndUpdate(
+//        selectedResultID,
+//        {
+//          percentageScore: userResults,
+//        },
+//        { new: true }
+//      );    
+//      if (!data) {
+//        return res.status(404).send("Could not update results");
+//      }
+//      res.send(data);
 //   } catch (error) {
-//     console.log(error);
+//     console.error(err);
+//     return res
+//       .status(500)
+//       .send("An error occurred while updating the Score.");
 //   }
-  
-//   })
+// });
+
 
 
 // app.post("/getAllStudentResults", async (req,res) => {
@@ -749,170 +985,7 @@ app.get("/getAllStudentResults", async (req,res) => {
 
 
 
-//       let score = 0;
-//      test.questions.forEach((question, index) => {
-//        console.log(`Answer ${index + 1}: ${question.answer}`);
-//        if (userAnswers[index] === question.answer){
-//           score++;
-//        }
-//       });
-//       let TotalPercentageScore = score/test.questions.length* 100;
-//       console.log( userId );
-//       console.log( userAnswers)
-//       console.log( testId )
-//       console.log(`Score : ${score}/${test.questions.length}`);
-//       console.log(TotalPercentageScore);
 
-//       const userTestResult = new UserTestResults({
-//         user: userId,
-//         test: testId,
-//         score: score,
-//         percentageScore: TotalPercentageScore,
-//       });
-//       userTestResult.save();
-//     });
-      
-  //     try {
-  //   // Get the test data from the database
-  //   const test = await Test.findById(testId);
-  //   if (!test) {
-  //     return res.status(404).json({ error: 'Test not found' });
-  //   }
-
-  //   // Calculate the total marks obtained by the user
-  //   let marksObtained = 0;
-  //   for (let i = 0; i < test.questions.length; i++) {
-  //     if (test.questions[i].answer === userAnswers[i]) {
-  //       marksObtained++;
-  //     }
-  //   }
-
-  //   // Create a new user test result document and save it in the database
-  //   const userTestResult = new UserTestResults({
-  //     user: userId,
-  //     test: testId,
-  //     userAnswers,
-  //     marksObtained,
-  //   });
-  //   await userTestResult.save();
-
-  //   return res.status(201).json({ message: 'User test result saved successfully' });
-  // } catch (error) {
-  //   console.error(error);
-  //   return res.status(500).json({ error: 'Internal server error' });
-  // }
-
-
-
-// try {
-//   const { id , subjectname , taketestid } = req.params;
-//   const { userAnswers } = req.body;
-// const subject = await Subject.findOne({ name: subjectname });
-//   if (!subject) {
-//     return res.status(400).json({ message: "Subject not found" });
-//   }
-
-//   const test = await Test.findOne({ _id: taketestid });
-  
-//   if (!test) {
-//     return res.status(400).json({ message: "test not found" });
-//   }
-
-//   if (!test.questions || !test.questions.length) {
-//     return res.status(400).json({ message: "test has no questions" });
-//   }
-
-//   if (userAnswers.length !== test.questions.length) {
-//     return res
-//       .status(400)
-//       .json({
-//         message:
-//           "number of answers does not match number of questions in the test",
-//       });
-//   }
-
-
-//   let score = 0;
-//   for (let i = 0; i < test.questions.length; i++){
-//     const question = await Test.findOne({ _id: userAnswers[i].question });
-//     if (question.answer === userAnswers[i].userAnswer){
-//       score++;
-//     }
-//   }
-
-//   const results = (score / test.questions.length) * 100;
-
-//   const userTestResult = new UserTestResults({
-//     user: id,
-//     test: test._id,
-//     answer: userAnswers,
-//     results,
-//   });
-//   await userTestResult.save();
-
-//   res.json({ results });
-// } catch (error){ 
-//   console.log(error);
-//   res.status(500).send("Server Error");
-// }
-
-
-// try{
-  //   const { id , subjectname , taketestid } = req.params;
-  //   const { userAnswers } = req.body;
-
-  //   const subject = await Subject.findOne({ name: subjectname });
-  //   if (!subject) {
-  //     return res.status(400).json({ message: "Subject not found" });
-  //   }
-
-  //   const exam = await Exam.findOne({
-  //     _id: taketestid,
-  //   });
-      
-  //   let score = 0;
-  //   for (let i = 0; i < userAnswers.length; i++){
-  //     const question = await Test.findOne({ _id: userAnswers[i].question });
-  //     if (question.answer === userAnswers[i].userAnswers){
-  //       score++;
-  //     }
-  //   }
-  //   const results = (score / exam.test.questions.length) * 100;
-
-  //   const userTestResult = new UserTestResults({
-  //     user: id,
-  //     exam: exam._id,
-  //     answer,
-  //     results,
-  //   });
-  //   await userTestResult.save();
-
-  //   res.json({ results });
-
-  // }catch (error){ 
-  //   console.log(error);
-  //   res.status(500).send("Server Error");
-  // }
-
-
-
-
-// function adminOnly(req,res,next){
-//     const userType =req.body.userType;
-//     // Get the authorization header from the request
-//     //const {userType} = req.body;
-//     if (userType != "Tutor" || "Admin") {
-//       // If no authorization header is provided, return an error response
-//       return res
-//         .status(401)
-//         .json({ message: "Authorization header not provided" });
-       
-//     }else{
-//         res.send("authenticated");
-//         next();
-//     }
-
-// }
 
 
 app.listen(5000, () => {

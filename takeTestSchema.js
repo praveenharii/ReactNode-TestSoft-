@@ -30,6 +30,10 @@ const UserTestResultSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  totalQuestions: {
+    type: Number,
+    required: true,
+  },
   percentageScore: {
     type: Number,
     required: true,

@@ -18,9 +18,13 @@ const renewTokenMiddleware = async (req, res, next) => {
  try {
    const decoded = jwt.verify(token, JWT_SECRET);
 
-   const newToken = jwt.sign({ email: decoded.email }, JWT_SECRET, {
-     //expiresIn: "1h",
-   });
+   const newToken = jwt.sign(
+     { email: decoded.email, userType: decoded.userType, userId: decoded._id },
+     JWT_SECRET,
+     {
+       //expiresIn: "1h",
+     }
+   );
 
    //res.setHeader("Authorization", "Bearer " + newToken);
    //res.status(200).json({ status: "ok", token: newToken });
