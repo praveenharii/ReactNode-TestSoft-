@@ -13,10 +13,15 @@ const UserDetailsSchema = new mongoose.Schema(
       enum: ["pending", "verified", "rejected"],
       default: "pending",
     },
+    isOnline: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     collection: "UserInfo",
   }
 );
 
-mongoose.model("UserInfo", UserDetailsSchema);
+const User =mongoose.model("UserInfo", UserDetailsSchema);
+module.exports = User;

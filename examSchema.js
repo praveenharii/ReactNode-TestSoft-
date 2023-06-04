@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 
+
 const TestSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -13,6 +14,20 @@ const TestSchema = new mongoose.Schema({
     type: Number, // time limit in minutes
     required: true,
   },
+  createdBy: {
+    type: String, //User name
+    required: true,
+  },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId, //User ID who created
+    ref: "UserInfo",
+    required: true,
+  },
+  createdAt: {
+    type: Date, //created At
+    required: true,
+  },
+
   questions: [
     {
       question: {

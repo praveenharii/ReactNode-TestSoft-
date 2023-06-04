@@ -34,12 +34,13 @@ mongoose
 
 
 
-require("./userDetails");
+const User = require("./userDetails")
 
 
-const User = mongoose.model("UserInfo");
 const { Exam, Test, Subject } = require("./examSchema");
 const UserTestResults = require("./takeTestSchema");
+const { log } = require("console");
+//const UserTestResult = require("./takeTestSchema");
 
 //const { name } = require("ejs");
 
@@ -75,6 +76,14 @@ async function sendEmail(message) {
     console.error("Error sending email: ", error);
   }
 }
+
+// Connection Status
+app.get("/ping", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+
+
 //login API for Register User page
 app.post("/register", async (req, res) => {
   const { fname, lname, email, password, phoneNumber, userType } = req.body;
@@ -142,11 +151,28 @@ app.post("/login-user", async (req, res) => {
     }
 
     else if (user.status === 'verified' && await bcrypt.compare(password, user.password)) {//compare password
-        const token = jwt.sign({ email: user.email, userType: user.userType, userId: user._id }, JWT_SECRET, {
-            // expiresIn: "30s",
-        });//create token with random digit above
+        
+      if (user.isOnline) {
+        return res.json({
+          error: "You are already logged in from another tab or browser.",
+        });
+      }
 
-        if (res.status(201)) {
+      const token = jwt.sign(
+          { email: user.email, userType: user.userType, userId: user._id },
+          JWT_SECRET,
+          {
+             expiresIn: "21600s",
+          }
+        );//create token with email, usertype and userID
+
+         user.isOnline = true;
+         await user.save();
+        //if (user.isOnline == True){
+         // return res.json({ error: "You already logged in another window" });
+        //}
+
+        if (res.status(201)) {      
             return res.json({ status: "ok", data: token });
         } else {
             return res.json({ error: "error" });
@@ -155,6 +181,38 @@ app.post("/login-user", async (req, res) => {
     res.json({ status: "error", error: "Invalid Password " });
 });
 //get data of user
+
+
+app.post("/logout", (req, res) => {
+  const token = req.headers.token;
+
+  // Verify and decode the token
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Perform the logout operation
+    const userId = decoded.userId;
+
+    User.findById(userId)
+      .then((user) => {
+        if (!user) {
+          return res.json({ error: "User does not exist" });
+        }
+
+        user.isOnline = false; // Set isOnline to false when the user logs out
+        return user.save(); // Save the updated user object
+      })
+      .then(() => {
+        res.json({ status: "ok" });
+      })
+      .catch((error) => {
+        res.status(500).json({ error: "Internal Server Error" });
+      });
+  });
+});
+
 
 app.post("/userData",  async (req, res) => {
     const { token } = req.body;
@@ -455,44 +513,131 @@ app.post("/createUser", async (req,res) => {
     }
 });
 
-app.post('/createExam', async (req, res) => {
+
+
+app.post("/createExam/:userId", async (req, res) => {
   try {
+    const { userId } = req.params;
+    const { fname, lname, email } = await User.findById(userId);
     const { subject, test } = req.body;
     const subjectExists = await Subject.exists({ name: subject.name });
+    const createdBy = `${fname} ${lname}`;
+    const currentDateTime = new Date().toISOString();
+    const admins = await User.find({ userType: "Admin" });
+
     if (subjectExists) {
       const existingSubject = await Subject.findOne({ name: subject.name });
-      const existingTest = existingSubject.tests.find(t => t.name === test.name);
+      const existingTest = existingSubject.tests.find(
+        (t) => t.name === test.name
+      );
+
       if (existingTest) {
-        const exam = new Exam({ subject: existingSubject._id, test: existingTest._id });
-        await exam.save();
-        res.json({ status: "New Test Created", success: true, exam });
-       
-      } else {
-        const newTest = new Test(test);
-        await newTest.save();
-        existingSubject.tests.push(newTest);
-        await existingSubject.save();
-        const exam = new Exam({ subject: existingSubject._id, test: newTest._id });
-        await exam.save();
-        res.json({status: "New Test Created", success: true, exam });
-       
-        
+        return res.status(400).json({
+          status: "Error",
+          message: `A test with the name '${test.name}' already exists in the subject '${subject.name}'.`,
+        });
       }
+
+      const newTest = new Test({
+        name: test.name,
+        date: test.date,
+        timeLimit: test.timeLimit,
+        createdBy: createdBy,
+        userId: userId,
+        createdAt: currentDateTime,
+        questions: test.questions.map((question) => ({
+          question: question.question,
+          options: question.options,
+          answer: question.answer || "",
+        })),
+      });
+      await newTest.save();
+      existingSubject.tests.push(newTest);
+      await existingSubject.save();
+      const exam = new Exam({
+        subject: existingSubject._id,
+        test: newTest._id,
+      });
+      await exam.save();
+
+      // Call sendEmail function inside the loop
+      for (const admin of admins) {
+        const msg = {
+          to: admin.email,
+          from: "praveenhari1900@gmail.com",
+          subject: `New Test Created by ${createdBy} in ${subject.name}`,
+          html: `<p>A new Test <strong>${test.name}</strong> in ${subject.name} has been created by <strong>${createdBy}</strong></p>`,
+        };
+
+        try {
+          await sendEmail(msg);
+          console.log(`Email sent to ${admin.email}`);
+        } catch (error) {
+          console.error(
+            `Error sending email to ${admin.email}: ${error.message}`
+          );
+        }
+      }
+
+      return res.json({
+        status: "New Test Created",
+        success: true,
+        exam,
+      });
     } else {
-      const newTest = new Test(test);
+      const newTest = new Test({
+        name: test.name,
+        date: test.date,
+        timeLimit: test.timeLimit,
+        createdBy: createdBy,
+        userId: userId,
+        createdAt: currentDateTime,
+        questions: test.questions.map((question) => ({
+          question: question.question,
+          options: question.options,
+          answer: question.answer || "",
+        })),
+      });
       const newSubject = new Subject({ name: subject.name, tests: [newTest] });
       await newTest.save();
       await newSubject.save();
       const exam = new Exam({ subject: newSubject._id, test: newTest._id });
       await exam.save();
-      res.json({ status: "New Test and Subject Created", success: true, exam });
-   
+
+      // Call sendEmail function inside the loop
+      for (const admin of admins) {
+        const msg = {
+          to: admin.email,
+          from: "praveenhari1900@gmail.com",
+          subject: `New Subject and Test Created by ${createdBy}`,
+          html: `<p>A new Test <strong>${test.name}</strong> and subject <strong>${subject.name}</strong> has been created by <strong>${createdBy}</strong></p>`,
+        };
+
+        try {
+          await sendEmail(msg);
+          console.log(`Email sent to ${admin.email}`);
+        } catch (error) {
+          console.error(
+            `Error sending email to ${admin.email}: ${error.message}`
+          );
+        }
+      }
+
+      return res.json({
+        status: "New Test and Subject Created",
+        success: true,
+        exam,
+      });
     }
   } catch (err) {
     console.error(err);
-  
+    return res
+      .status(500)
+      .json({ status: "Error", message: "An error occurred." });
   }
 });
+
+
 
 app.get("/subjects", async (req, res) => {
   try {
@@ -503,6 +648,22 @@ app.get("/subjects", async (req, res) => {
 
   }
 });
+
+app.get("/subjects/:id", (req, res) => {
+  const userId = req.params.id;
+
+  Subject.find({ "tests.userId": userId })
+    .populate("tests.userId", "_id") // Populate the entire userId object
+    .select("-tests.questions")
+    .then((subjects) => {
+      res.json({ status: "ok", data: subjects });
+    })
+    .catch((err) => {
+      res.status(500).json({ error: "Error retrieving subjects" });
+    });
+});
+
+
 
 app.get("/subjects/:subjectName/tests", async (req, res) => {
   try {
@@ -520,45 +681,75 @@ app.get("/subjects/:subjectName/tests", async (req, res) => {
   }
 });
 
+
+
 app.delete("/deleteSubject", async (req, res) => {
   const { subjectid } = req.body;
   try {
-    await Subject.findByIdAndDelete({ _id: subjectid });
-
-    res.send({ status: "Ok", data: "Deleted" });
-    //res.send({status : "User Deleted!!"});
-    //res.send({ status: "OK" , data : "Deleted" });
-  } catch (error) {
-    console.log(error);
-  }
-});
-
-app.delete("/deleteTest", async (req, res) => {
-  const { testid } = req.body;
-  
-  try {
-    const result = await Test.findByIdAndDelete( {_id: testid});
-    if (!result) {
-      return res.status(404).send({ status: "Error", data: "Test not found" });
+    const subject = await Subject.findById(subjectid);
+    if (!subject) {
+      return res
+        .status(404)
+        .send({ status: "Error", message: "Subject not found" });
     }
-  const subjectResult = await Subject.findOneAndUpdate(
-    { "tests._id": testid },
-    { $pull: { tests: { _id: testid } } },
-    { new: true }
-  );
-  if (!subjectResult) {
-    return res.status(404).send({ status: "Error", data: "Subject not found" });
-  }
 
-    return res.send({ status: "Ok", data: "Deleted" });
+    const testIds = subject.tests.map((test) => test._id);
+
+    // Delete exams associated with the subject
+    await Exam.deleteMany({ subject: subjectid });
+
+    // Delete tests associated with the subject
+    await Test.deleteMany({ _id: { $in: testIds } });
+
+    // Delete the subject
+    await Subject.findByIdAndDelete(subjectid);
+
+    res.send({ status: "OK", message: "Subject and associated tests deleted" });
   } catch (error) {
     console.log(error);
-    return res
+    res
       .status(500)
-      .send({ status: "Error", data: "Internal Server Error" });
+      .send({
+        status: "Error",
+        message: "An error occurred while deleting the subject",
+      });
   }
 });
 
+app.delete("/deleteTest/:testId", async (req, res) => {
+  const { testId } = req.params;
+
+  try {
+    // Find the subject containing the test
+    const subject = await Subject.findOne({ "tests._id": testId });
+
+    if (!subject) {
+      return res
+        .status(404)
+        .send({ status: "Error", message: "Subject not found" });
+    }
+
+    // Remove the test from the subject
+    subject.tests = subject.tests.filter(
+      (test) => test._id.toString() !== testId
+    );
+    await subject.save();
+
+    // Delete the test
+    await Test.findByIdAndDelete(testId);
+
+    // Delete exams associated with the test
+    await Exam.deleteMany({ test: testId });
+
+    res.send({ status: "OK", message: "Test and associated data deleted" });
+  } catch (error) {
+    console.log(error);
+    res.status(500).send({
+      status: "Error",
+      message: "An error occurred while deleting the test and associated data",
+    });
+  }
+});
 
 
 //display Questions
@@ -680,6 +871,7 @@ app.post("/:id/:subjectname/tests/:taketestid/submit", async (req, res) => {
   const testName = await Test.findById(testId, "name");
   console.log(studentName);
   console.log(testName);
+  //add pass Exam
 
   const existingResult = await UserTestResults.findOne({
     user: userId,
@@ -731,7 +923,61 @@ app.get("/getAllStudentResults", async (req,res) => {
 
     res.status(200).send({ data: allStudentResults });      
   } catch (error) {
-    
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/getSubjectAndTestNames", async (req, res) => {
+  try {
+    const subjectAndTestNames = await UserTestResults.aggregate([
+      {
+        $group: {
+          _id: "$subject",
+          tests: {
+            $addToSet: {
+              testId: "$test",
+              testName: "$testname",
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          subject: "$_id",
+          tests: 1,
+        },
+      },
+    ]);
+
+    console.log(subjectAndTestNames);
+    res.status(200).send({ data: subjectAndTestNames });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/getResults/:subject/:testId", async (req, res) => {
+  try {
+    const { subject, testId } = req.params;
+    console.log(subject,testId);
+    const results = await UserTestResults.find({ subject, test: testId })
+      .select("_id username testname score totalQuestions percentageScore date")
+      .exec();
+   
+   
+   
+   if (results.length === 0) {
+      return res.status(404).json({ error: "No results found" });
+    }
+
+    console.log(results);
+    res.status(200).json({ data: results });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -911,6 +1157,62 @@ app.post("/downloadResults/:subjectName/:testName", async (req, res) => {
       res.status(500).json({ error: "Internal server error" });
     }
 });
+
+app.get("/upcomingTests", async (req, res) => {
+  try {
+    const subjects = await Subject.find().populate("tests");
+
+    const tests = subjects.reduce((acc, subject) => {
+      const upcomingTests = subject.tests
+        .filter((test) => test.date > new Date()) // Filter out tests that are in the past
+        .map((test) => {
+          const { questions, ...testData } = test.toObject();
+          return { ...testData, subject: subject.name };
+        });
+
+      return [...acc, ...upcomingTests];
+    }, []);
+
+    res.json({ data: tests });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+app.get("/getSubjectAndTestNames/:userId", async (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    // Get the subjects and their associated tests based on the userId
+    const subjects = await Subject.find({ "tests.userId": userId })
+      .populate("tests.userId", "_id") // Populate the entire userId object
+      .select("-tests.questions");
+
+      console.log(subjects);
+    // Get the UserTestResults for each subject
+    const subjectAndTestNames = subjects.map((subject) => {
+      const tests = subject.tests.map((test) => ({
+        testId: test._id,
+        testName: test.name,
+      }));
+
+      return {
+        subject: subject.name,
+        tests: tests,
+      };
+    });
+
+    console.log(subjectAndTestNames);
+    res.status(200).send({ data: subjectAndTestNames });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
 // app.post("/editStudentScore/:selectedResultID", async (req,res) => {
 //   const selectedResultID = req.params.selectedResultID;
 //   const userResults= req.body.score;
