@@ -8,8 +8,6 @@ const bcrypt = require("bcryptjs");
 app.set("view engine", "ejs");
 app.use(express.urlencoded({ extended: false }));
 const jsonexport = require("jsonexport");
-const json2xls = require("json2xls");
-const fs = require("fs");
 
 const { Readable } = require("stream");
 const jwt = require("jsonwebtoken");
@@ -39,7 +37,6 @@ const User = require("./userDetails")
 
 const { Exam, Test, Subject } = require("./examSchema");
 const UserTestResults = require("./takeTestSchema");
-const { log } = require("console");
 //const UserTestResult = require("./takeTestSchema");
 
 //const { name } = require("ejs");
@@ -168,9 +165,7 @@ app.post("/login-user", async (req, res) => {
 
          user.isOnline = true;
          await user.save();
-        //if (user.isOnline == True){
-         // return res.json({ error: "You already logged in another window" });
-        //}
+
 
         if (res.status(201)) {      
             return res.json({ status: "ok", data: token });
@@ -411,6 +406,20 @@ app.get("/paginatedUsers", async(req,res)=>{
   res.json(results);
 });
 
+app.get("/searchUsers", async (req, res) => {
+  const { email } = req.query;
+
+  try {
+    const users = await User.find({ email: { $regex: email, $options: "i" } });
+
+    res.json(users);
+  } catch (error) {
+    console.log(error);
+    res.status(500).send("Error searching users");
+  }
+});
+
+
 app.delete("/deleteUser", async  (req,res) => {
    const {userid} = req.body;
     try {
@@ -423,6 +432,44 @@ app.delete("/deleteUser", async  (req,res) => {
         console.log(error);
     }
 });
+
+app.post("/deleteUserRequest", async (req, res) => {
+  const { userid } = req.body;
+  try {
+    const user = await User.findById({ _id: userid });
+    console.log(user);
+    const admins = await User.find({ userType: "Admin" });
+
+    // Call sendEmail function inside the loop
+    for (const admin of admins) {
+      const msg = {
+        to: admin.email,
+        from: "praveenhari1900@gmail.com",
+        subject: "Request To delete User from Tutor",
+        text: `A request to delete user ${user.fname} ${user.lname} (${user.email}) . Please verify their account and delete User if needed!.`,
+        html: `<p>A request to delete user <strong>${user.fname} ${user.lname}</strong> (${user.email}). As an admin, please <a href="http://localhost:3000/sign-in">login</a> and verify their account in more detailed view.</p>`,
+      };
+
+      try {
+        await sendEmail(msg);
+        console.log(`Email sent to ${admin.email}`);
+      } catch (error) {
+        console.error(
+          `Error sending email to ${admin.email}: ${error.message}`
+        );
+      }
+    }
+
+    res.send({ status: "Ok", data: "Requested" });
+
+  } catch (error) {
+     return res
+       .status(500)
+       .send("An error occurred while sending mail to admin.");
+    console.log(error);
+  }
+});
+
 
 app.post("/updateProfile/:id", renewToken , async(req, res) => {
 
@@ -503,7 +550,8 @@ app.post("/createUser", async (req,res) => {
             lname,
             email,
             password: encryptedPassword,
-            userType,                
+            userType,
+            status: "verified"                
         });
         User.save();
         
@@ -524,6 +572,7 @@ app.post("/createExam/:userId", async (req, res) => {
     const createdBy = `${fname} ${lname}`;
     const currentDateTime = new Date().toISOString();
     const admins = await User.find({ userType: "Admin" });
+    const encryptedPassword = await bcrypt.hash(test.testPassword, 10);
 
     if (subjectExists) {
       const existingSubject = await Subject.findOne({ name: subject.name });
@@ -545,6 +594,7 @@ app.post("/createExam/:userId", async (req, res) => {
         createdBy: createdBy,
         userId: userId,
         createdAt: currentDateTime,
+        testPassword: encryptedPassword,
         questions: test.questions.map((question) => ({
           question: question.question,
           options: question.options,
@@ -592,6 +642,7 @@ app.post("/createExam/:userId", async (req, res) => {
         createdBy: createdBy,
         userId: userId,
         createdAt: currentDateTime,
+        testPassword: encryptedPassword,
         questions: test.questions.map((question) => ({
           question: question.question,
           options: question.options,
@@ -841,17 +892,38 @@ app.get("/studentViewTest/:testid", async (req, res) => {
 app.post("/:id/checkUserTakenTest/:taketestid", async (req,res) =>{
   const userId = req.params.id;
   const testId = req.params.taketestid;
- 
+  const testPassword = req.body.testPassword;
+  console.log(testPassword);
   try {
-     const existingResult = await UserTestResults.findOne({
-       user: userId,
-       test: testId,
-     });
-     if (existingResult) {
-       console.log("User has already taken the test");
-       return res.status(400).send({ message: "You have already taken the test" });
-     }
+      const test = await Test.findById(testId);
+      const existingResult = await UserTestResults.findOne({
+        user: userId,
+        test: testId,
+      });
+      console.log(test.testPassword);
+      if (existingResult) {
+        console.log("User has already taken the test");
+        return res
+          .status(200)
+          .send({ message: "You have already taken the test" });
+      }
 
+     if (test) {
+       // Check if test exists
+
+       const isPasswordValid = await bcrypt.compare(
+         testPassword,
+         test.testPassword
+       );
+       if (isPasswordValid) {
+         return res.status(200).send({ message: "OK" });
+       } else {
+         return res.status(200).send({ message: "Wrong password" });
+       }
+     } else {
+       return res.status(404).send({ message: "Test not found" });
+       console.log(error);
+     }
   } catch (error) {
     console.log(error);
     res.status(500).send("Error Take test");

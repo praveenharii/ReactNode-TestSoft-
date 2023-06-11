@@ -28,6 +28,8 @@ const TestSchema = new mongoose.Schema({
     required: true,
   },
 
+  testPassword:String,
+
   questions: [
     {
       question: {
