@@ -1,9 +1,8 @@
 
+require("dotenv").config();
 const jwt = require("jsonwebtoken");
 
-const JWT_SECRET =
-  "akondfasfdoiwned()asdasndjnanwd{}adc[]]Adsnwnii1232nlka213213kanskdcniwai213124r2314e";
-
+const JWT_SECRET = process.env.JWT_SECRET;
 
 
 const renewTokenMiddleware = async (req, res, next) => {

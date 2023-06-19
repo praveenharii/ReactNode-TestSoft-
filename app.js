@@ -1,5 +1,10 @@
+require("dotenv").config();
+const PORT = process.env.PORT || 5000
+const path = require('path');
 const express = require("express");//import express
 const app = express();//initialize to app
+app.use(express.static(path.join(__dirname + "/public")))
+
 const mongoose = require("mongoose");
 app.use(express.json());
 const cors = require("cors");
@@ -12,14 +17,12 @@ const jsonexport = require("jsonexport");
 const { Readable } = require("stream");
 const jwt = require("jsonwebtoken");
 const renewToken = require("./middlewares/renewTokenMiddleware");
-const JWT_SECRET =
-"akondfasfdoiwned()asdasndjnanwd{}adc[]]Adsnwnii1232nlka213213kanskdcniwai213124r2314e";
 
-
+const JWT_SECRET = process.env.JWT_SECRET;
 
 var nodemailer = require('nodemailer');
 
-const mongoURL = "mongodb+srv://pvnhari2156:Praveenhari2000@cluster0.o6eatlm.mongodb.net/?retryWrites=true&w=majority";
+const mongoURL = process.env.MONGO_URL;
 
 mongoose
 .connect(mongoURL, {
@@ -37,6 +40,7 @@ const User = require("./userDetails")
 
 const { Exam, Test, Subject } = require("./examSchema");
 const UserTestResults = require("./takeTestSchema");
+const Activity = require("./activity");
 //const UserTestResult = require("./takeTestSchema");
 
 //const { name } = require("ejs");
@@ -47,13 +51,15 @@ const cloudinary = require('cloudinary').v2;
 
 // Configuration 
 cloudinary.config({
-  cloud_name: "doniesrwl",
-  api_key: "631438745435894",
-  api_secret: "K5hoEBOtcQoF-0etGnFlUJL5jXw"
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.API_KEY,
+  api_secret: process.env.API_SECRET
 });
 
 
-
+app.get("*",(req,res) => {
+  res.sendFile(path.join(__dirname, "./public/index.html"));
+})
 
 
 // Send email function
@@ -61,8 +67,8 @@ async function sendEmail(message) {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: "linux2156@gmail.com",
-      pass: "wuzecfhttfwnysvu",
+      user: process.env.USER,
+      pass: process.env.PASS,
     },
   });
 
@@ -132,51 +138,107 @@ app.post("/register", async (req, res) => {
 
 //login API for login page
 app.post("/login-user", async (req, res) => {
-    const { email, password } = req.body;//request email, password
+  const { email, password } = req.body; // request email, password
 
-    const user = await User.findOne({ email });//check exist or not
-    
-    if (!user) {
-        return res.json({ error: "User not exists" });
-    }
+  const user = await User.findOne({ email }); // check if the user exists
 
-    if (user.status === 'pending'){
+  if (!user) {
+    return res.json({ error: "User does not exist" });
+  }
+
+  if (user.status === "pending") {
+    return res.json({
+      error:
+        "You are not verified yet. Please wait for the admin to accept your sign-up request!",
+    });
+  } else if (
+    user.status === "verified" &&
+    (await bcrypt.compare(password, user.password))
+  ) {
+    if (user.isOnline) {
       return res.json({
-        error:
-          "You are not a verified, please wait for admin to accept your Sign Up request!!!",
+        error: "You are already logged in from another tab or browser.",
       });
     }
 
-    else if (user.status === 'verified' && await bcrypt.compare(password, user.password)) {//compare password
-        
-      if (user.isOnline) {
-        return res.json({
-          error: "You are already logged in from another tab or browser.",
-        });
+    const token = jwt.sign(
+      { email: user.email, userType: user.userType, userId: user._id },
+      JWT_SECRET,
+      {
+        expiresIn: "21600s",
       }
+    ); // create token with email, usertype, and userID
 
-      const token = jwt.sign(
-          { email: user.email, userType: user.userType, userId: user._id },
-          JWT_SECRET,
-          {
-             expiresIn: "21600s",
-          }
-        );//create token with email, usertype and userID
+    user.isOnline = true;
+    await user.save();
 
-         user.isOnline = true;
-         await user.save();
+    // Update the login activity data
+    const today = new Date().toISOString().split("T")[0];
+    const activity = await Activity.findOne({ date: today });
 
-
-        if (res.status(201)) {      
-            return res.json({ status: "ok", data: token });
-        } else {
-            return res.json({ error: "error" });
-        }
+    if (activity) {
+      activity.logins += 1;
+      await activity.save();
+    } else {
+      const newActivity = new Activity({
+        date: today,
+        logins: 1,
+        logouts: 0,
+      });
+      await newActivity.save();
     }
-    res.json({ status: "error", error: "Invalid Password " });
-});
-//get data of user
 
+    return res.json({ status: "ok", data: token });
+  }
+
+  return res.json({ status: "error", error: "Invalid Password" });
+});
+
+// app.post("/login-user", async (req, res) => {
+//     const { email, password } = req.body;//request email, password
+
+//     const user = await User.findOne({ email });//check exist or not
+    
+//     if (!user) {
+//         return res.json({ error: "User not exists" });
+//     }
+
+//     if (user.status === 'pending'){
+//       return res.json({
+//         error:
+//           "You are not a verified, please wait for admin to accept your Sign Up request!!!",
+//       });
+//     }
+
+//     else if (user.status === 'verified' && await bcrypt.compare(password, user.password)) {//compare password
+        
+//       if (user.isOnline) {
+//         return res.json({
+//           error: "You are already logged in from another tab or browser.",
+//         });
+//       }
+
+//       const token = jwt.sign(
+//           { email: user.email, userType: user.userType, userId: user._id },
+//           JWT_SECRET,
+//           {
+//              expiresIn: "21600s",
+//           }
+//         );//create token with email, usertype and userID
+
+//          user.isOnline = true;
+//          await user.save();
+
+
+//         if (res.status(201)) {      
+//             return res.json({ status: "ok", data: token });
+//         } else {
+//             return res.json({ error: "error" });
+//         }
+//     }
+//     res.json({ status: "error", error: "Invalid Password " });
+// });
+//get data of user
 
 app.post("/logout", (req, res) => {
   const token = req.headers.token;
@@ -200,13 +262,64 @@ app.post("/logout", (req, res) => {
         return user.save(); // Save the updated user object
       })
       .then(() => {
-        res.json({ status: "ok" });
+        // Update the logout activity data
+        const today = new Date().toISOString().split("T")[0];
+        Activity.findOne({ date: today })
+          .then((activity) => {
+            if (activity) {
+              activity.logouts += 1;
+              return activity.save();
+            } else {
+              const newActivity = new Activity({
+                date: today,
+                logins: 0,
+                logouts: 1,
+              });
+              return newActivity.save();
+            }
+          })
+          .then(() => {
+            res.json({ status: "ok" });
+          })
+          .catch((error) => {
+            res.status(500).json({ error: "Internal Server Error" });
+          });
       })
       .catch((error) => {
         res.status(500).json({ error: "Internal Server Error" });
       });
   });
 });
+
+// app.post("/logout", (req, res) => {
+//   const token = req.headers.token;
+
+//   // Verify and decode the token
+//   jwt.verify(token, JWT_SECRET, (err, decoded) => {
+//     if (err) {
+//       return res.status(401).json({ error: "Unauthorized" });
+//     }
+
+//     // Perform the logout operation
+//     const userId = decoded.userId;
+
+//     User.findById(userId)
+//       .then((user) => {
+//         if (!user) {
+//           return res.json({ error: "User does not exist" });
+//         }
+
+//         user.isOnline = false; // Set isOnline to false when the user logs out
+//         return user.save(); // Save the updated user object
+//       })
+//       .then(() => {
+//         res.json({ status: "ok" });
+//       })
+//       .catch((error) => {
+//         res.status(500).json({ error: "Internal Server Error" });
+//       });
+//   });
+// });
 
 
 app.post("/userData",  async (req, res) => {
@@ -303,7 +416,7 @@ app.get("/reset-password/:id/:token", async (req, res) => {
         // console.log(error);
         res.send("Not Verified");
     }
-   
+ 
 });
 
 app.post("/reset-password/:id/:token", async (req, res) => {
@@ -849,8 +962,14 @@ app.get("/subTests", async (req, res) => {
       const upcomingTests = subject.tests
         .filter((test) => test.date > new Date()) // Filter out tests that are in the past
         .map((test) => ({
-          ...test.toObject(),
+          name: test.name,
+          date: test.date,
+          timeLimit: test.timeLimit,
+          createdBy: test.createdBy,
+          userId: test.userId,
+          createdAt: test.createdAt,
           subject: subject.name,
+          _id: test._id,
         }));
       return [...acc, ...upcomingTests];
     }, []);
@@ -1147,7 +1266,22 @@ app.post("/updateQuestions/:testName/:testid", async (req, res) => {
       { new: true }
     );
 
-    if (existingTest) {
+    const existingSubject = await Subject.findOneAndUpdate(
+      {
+        "tests._id": testid,
+      },
+      {
+        $set: {
+          "tests.$.name": test.name,
+          "tests.$.date": test.date,
+          "tests.$.timeLimit": test.timeLimit,
+          "tests.$.questions": test.questions,
+        },
+      },
+      { new: true }
+    );
+
+    if (existingTest && existingSubject) {
       res.json({ status: "Questions updated", success: true });
     } else {
       res.json({ status: "Test not found", success: false });
@@ -1234,18 +1368,53 @@ app.get("/upcomingTests", async (req, res) => {
   try {
     const subjects = await Subject.find().populate("tests");
 
-    const tests = subjects.reduce((acc, subject) => {
-      const upcomingTests = subject.tests
-        .filter((test) => test.date > new Date()) // Filter out tests that are in the past
-        .map((test) => {
-          const { questions, ...testData } = test.toObject();
-          return { ...testData, subject: subject.name };
-        });
+    const upcomingTests = subjects.reduce((acc, subject) => {
+      const tests = subject.tests.filter((test) => test.date > new Date()); // Filter out tests that are in the past
 
-      return [...acc, ...upcomingTests];
+      const upcoming = tests.map((test) => {
+        const currentDate = new Date();
+        const testDate = new Date(test.date);
+        const timeDiff = testDate.getTime() - currentDate.getTime();
+        const daysLeft = Math.ceil(timeDiff / (1000 * 3600 * 24)); // Calculate the number of days left
+
+        return {
+          subject: subject.name,
+          testName: test.name,
+          daysLeft: daysLeft,
+        };
+      });
+
+      return [...acc, ...upcoming];
     }, []);
 
-    res.json({ data: tests });
+    res.json({ data: upcomingTests });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+app.get("/upComingTestCalender", async (req, res) => {
+  try {
+    const subjects = await Subject.find().populate("tests");
+
+    const upcomingTests = subjects.reduce((acc, subject) => {
+      const tests = subject.tests; // Filter out tests that are in the past
+
+      const upcoming = tests.map((test) => {
+        const testDate = new Date(test.date);
+
+        return {
+          subjectName: subject.name,
+          testName: test.name,
+          date: testDate.toISOString().split("T")[0], // Format date as "YYYY-MM-DD"
+        };
+      });
+
+      return [...acc, ...upcoming];
+    }, []);
+
+    res.json({ data: upcomingTests });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Internal server error" });
@@ -1284,7 +1453,16 @@ app.get("/getSubjectAndTestNames/:userId", async (req, res) => {
   }
 });
 
-
+app.get("/activity-data", (req, res) => {
+  // Fetch the login/logout activity data from your data source
+  Activity.find()
+    .then((activityData) => {
+      res.json(activityData);
+    })
+    .catch((error) => {
+      res.status(500).json({ error: "Internal Server Error" });
+    });
+});
 // app.post("/editStudentScore/:selectedResultID", async (req,res) => {
 //   const selectedResultID = req.params.selectedResultID;
 //   const userResults= req.body.score;
@@ -1362,7 +1540,7 @@ app.get("/getSubjectAndTestNames/:userId", async (req, res) => {
 
 
 
-app.listen(5000, () => {
+app.listen(PORT, () => {
     console.log("Server Started");
 });
 
