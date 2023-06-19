@@ -574,7 +574,7 @@ app.post("/deleteUserRequest", async (req, res) => {
 app.post("/updateProfile/:id", renewToken , async(req, res) => {
 
   const { fname, lname, phoneNumber, newPassword } = req.body;
-  const newToken = req.newToken;
+   const newToken = req.headers.authorization.split(" ")[1];
   try {
     const id = req.params.id;
 
