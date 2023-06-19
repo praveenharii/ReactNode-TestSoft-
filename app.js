@@ -369,13 +369,13 @@ app.post("/forgot-password", async (req, res) => {
         const token = jwt.sign({ email: oldUser.email, id: oldUser._id }, secret, {
             expiresIn: "5m",
         });
-        const link = `https://sparkling-sneakers-bee.cyclic.app/reset-password/${oldUser._id}/${token}`;
+        const link = `${PORT}/reset-password/${oldUser._id}/${token}`;
         var transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: "pvnhari2156@gmail.com",
-                pass: "sbhnhsmavulqqgda",
-            }
+          service: "gmail",
+          auth: {
+            user: process.env.USER,
+            pass: process.env.PASS,
+          },
         });
 
         var mailOptions = {
