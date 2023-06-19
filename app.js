@@ -359,47 +359,34 @@ app.post("/getAllPendingUsers", async (req,res) => {
 })
 
 app.post("/forgot-password", async (req, res) => {
-    const { email } = req.body;
-    try {
-        const oldUser = await User.findOne({ email });
-        if (!oldUser) {
-            return res.json({ status: "User Not Existed" })
-        }
-        const secret = JWT_SECRET + oldUser.password;
-        const token = jwt.sign({ email: oldUser.email, id: oldUser._id }, secret, {
-            expiresIn: "5m",
-        });
-        const link = `${PORT}/reset-password/${oldUser._id}/${token}`;
-        var transporter = nodemailer.createTransport({
-          service: "gmail",
-          auth: {
-            user: process.env.USER,
-            pass: process.env.PASS,
-          },
-        });
-
-        var mailOptions = {
-          from: "youremail@gmail.com",
-          to: email,
-          subject: "Password Reset",
-          html:
-            '<p>Click <a href="' +
-            link +
-            '">here</a> to reset your password.</p>',
-        };
-
-        transporter.sendMail(mailOptions, function (error, info) {
-            if (error) {
-                console.log(error);
-            } else {
-                console.log('Email sent: ' + info.response);
-            }
-        });
-        console.log(link);
-        return res.json({ status: "Reset Password sent to email, please check your email." });
-    } catch (error) {
-        console.log(error);
+  const { email } = req.body;
+  try {
+    const oldUser = await User.findOne({ email });
+    if (!oldUser) {
+      return res.json({ status: "User Not Existed" });
     }
+    const secret = JWT_SECRET + oldUser.password;
+    const token = jwt.sign({ email: oldUser.email, id: oldUser._id }, secret, {
+      expiresIn: "5m",
+    });
+    const link = `https://sparkling-sneakers-bee.cyclic.app/reset-password/${oldUser._id}/${token}`;
+
+    const message = {
+      from: "youremail@gmail.com",
+      to: email,
+      subject: "Password Reset",
+      html:
+        '<p>Click <a href="' + link + '">here</a> to reset your password.</p>',
+    };
+
+    await sendEmail(message);
+    console.log(link);
+    return res.json({
+      status: "Reset Password sent to email, please check your email.",
+    });
+  } catch (error) {
+    console.log(error);
+  }
 });
 app.get("/reset-password/:id/:token", async (req, res) => {
     const { id, token } = req.params;
