@@ -1,9 +1,9 @@
 require("dotenv").config();
 const PORT = process.env.PORT || 5000
-const path = require('path');
+// const path = require('path');
 const express = require("express");//import express
 const app = express();//initialize to app
-app.use(express.static(path.join(__dirname + "/public")))
+// app.use(express.static(path.join(__dirname + "/public")))
 
 const mongoose = require("mongoose");
 app.use(express.json());
@@ -57,9 +57,9 @@ cloudinary.config({
 });
 
 
-app.get("*",(req,res) => {
-  res.sendFile(path.join(__dirname, "./public/index.html"));
-})
+// app.get("*",(req,res) => {
+//   res.sendFile(path.join(__dirname, "./public/index.html"));
+// })
 
 
 // Send email function
