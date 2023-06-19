@@ -595,8 +595,10 @@ app.post("/updateProfile/:id", renewToken , async(req, res) => {
     if (!data) {
       return res.status(404).send("User not found");
     }
-    res.setHeader("Authorization", `Bearer ${newToken}`);
-    return res.status(200).json({ status: "ok", data: data, token: newToken });
+   return res
+     .status(200)
+     .header("Authorization", `Bearer ${newToken}`)
+     .json({ status: "ok", data: data, token: newToken });
   } catch (err) {
     console.error(err);
     return res
