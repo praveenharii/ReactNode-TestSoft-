@@ -369,7 +369,7 @@ app.post("/forgot-password", async (req, res) => {
         const token = jwt.sign({ email: oldUser.email, id: oldUser._id }, secret, {
             expiresIn: "5m",
         });
-        const link = `http://localhost:5000/reset-password/${oldUser._id}/${token}`;
+        const link = `https://sparkling-sneakers-bee.cyclic.app/reset-password/${oldUser._id}/${token}`;
         var transporter = nodemailer.createTransport({
             service: 'gmail',
             auth: {
@@ -1180,7 +1180,7 @@ app.get("/getNumbersOfUsers" , async(req,res) => {
      res.status(200).json(users);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ error: "Server error" });
   }
 })
 
