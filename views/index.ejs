@@ -75,16 +75,22 @@
             }
         }
 
-        document.querySelector('form').addEventListener('submit', function (e) {
-            var password = document.querySelector('#password').value;
-            var confirmPassword = document.querySelector('#confirm-password').value;
-            var errorMessage = document.querySelector('#password-error');
-            if (password != confirmPassword) {
-                e.preventDefault();
-                errorMessage.textContent = "Passwords do not match";
-            } else {
-                errorMessage.textContent = "";
-            }
+         document.querySelector('form').addEventListener('submit', function (e) {
+                var password = document.querySelector('#password').value;
+                var confirmPassword = document.querySelector('#confirm-password').value;
+                var errorMessage = document.querySelector('#password-error');
+                var passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*])(?=.{6,})/;
+
+                if (!passwordRegex.test(password)) {
+                    e.preventDefault();
+                    errorMessage.textContent =
+                        "Password must be at least 6 characters long and contain at least one uppercase letter and one special character.";
+                } else if (password != confirmPassword) {
+                    e.preventDefault();
+                    errorMessage.textContent = "Passwords do not match";
+                } else {
+                    errorMessage.textContent = "";
+                }
         });
     </script>
 </body>
