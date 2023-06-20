@@ -449,6 +449,17 @@ app.get("/getAllUsers",   async(req,res) => {
     }
 });
 
+app.get("/tutorGetAllUsers", async (req, res) => {
+  try {
+    const allUser = await User.find({
+      userType: { $in: ["Tutor", "Student"] },
+    });
+    res.send({ status: "ok", data: allUser });
+  } catch (error) {
+    console.log(error);
+  }
+});
+
 app.post("/verifyUser", async(req,res) => {
   const { userid, email } = req.body;
 
