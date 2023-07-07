@@ -360,7 +360,8 @@ app.post("/forgot-password", async (req, res) => {
       expiresIn: "5m",
     });
     //const link = `https://sparkling-sneakers-bee.cyclic.app/reset-password/${oldUser._id}/${token}`;
-    const link = `http://localhost:5000/reset-password/${oldUser._id}/${token}`;
+    //const link = `http://localhost:5000/reset-password/${oldUser._id}/${token}`;
+    const link = `${process.env.CYCLIC_URL}/reset-password/${oldUser._id}/${token}`;
 
     const message = {
       from: "youremail@gmail.com",
