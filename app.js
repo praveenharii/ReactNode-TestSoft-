@@ -1,9 +1,8 @@
 require("dotenv").config();
 const PORT = process.env.PORT || 5000
 // const path = require('path');
-const express = require("express");//import express
-const app = express();//initialize to app
-// app.use(express.static(path.join(__dirname + "/public")))
+const express = require("express");
+const app = express();
 
 const mongoose = require("mongoose");
 app.use(express.json());
@@ -41,7 +40,8 @@ const User = require("./userDetails")
 const { Exam, Test, Subject } = require("./examSchema");
 const UserTestResults = require("./takeTestSchema");
 const Activity = require("./activity");
-//const UserTestResult = require("./takeTestSchema");
+const UserTestResult = require("./takeTestSchema");
+
 
 //const { name } = require("ejs");
 
@@ -57,9 +57,6 @@ cloudinary.config({
 });
 
 
-// app.get("*",(req,res) => {
-//   res.sendFile(path.join(__dirname, "./public/index.html"));
-// })
 
 
 // Send email function
@@ -140,7 +137,7 @@ app.post("/register", async (req, res) => {
 app.post("/login-user", async (req, res) => {
   const { email, password } = req.body; // request email, password
 
-  const user = await User.findOne({ email }); // check if the user exists
+  const user = await User.findOne({ email });
 
   if (!user) {
     return res.json({ error: "User does not exist" });
@@ -167,7 +164,7 @@ app.post("/login-user", async (req, res) => {
       {
         expiresIn: "21600s",
       }
-    ); // create token with email, usertype, and userID
+    ); 
 
     user.isOnline = true;
     await user.save();
@@ -187,7 +184,6 @@ app.post("/login-user", async (req, res) => {
       });
       await newActivity.save();
     }
-
     return res.json({ status: "ok", data: token });
   }
 
@@ -242,24 +238,18 @@ app.post("/login-user", async (req, res) => {
 
 app.post("/logout", (req, res) => {
   const token = req.headers.token;
-
-  // Verify and decode the token
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-
-    // Perform the logout operation
     const userId = decoded.userId;
-
     User.findById(userId)
       .then((user) => {
         if (!user) {
           return res.json({ error: "User does not exist" });
         }
-
-        user.isOnline = false; // Set isOnline to false when the user logs out
-        return user.save(); // Save the updated user object
+        user.isOnline = false;
+        return user.save(); 
       })
       .then(() => {
         // Update the logout activity data
@@ -369,7 +359,8 @@ app.post("/forgot-password", async (req, res) => {
     const token = jwt.sign({ email: oldUser.email, id: oldUser._id }, secret, {
       expiresIn: "5m",
     });
-    const link = `https://sparkling-sneakers-bee.cyclic.app/reset-password/${oldUser._id}/${token}`;
+    //const link = `https://sparkling-sneakers-bee.cyclic.app/reset-password/${oldUser._id}/${token}`;
+    const link = `http://localhost:5000/reset-password/${oldUser._id}/${token}`;
 
     const message = {
       from: "youremail@gmail.com",
@@ -606,6 +597,7 @@ app.post("/updateProfile/:id", renewToken , async(req, res) => {
     if (!data) {
       return res.status(404).send("User not found");
     }
+    
    return res
      .status(200)
      .header("Authorization", `Bearer ${newToken}`)
@@ -1164,8 +1156,12 @@ app.get("/getResults/:subject/:testId", async (req, res) => {
       return res.status(404).json({ error: "No results found" });
     }
 
-    console.log(results);
-    res.status(200).json({ data: results });
+    const totalSubmitted = results.length;
+    const totalStudents = await User.countDocuments({
+      userType: "Student",
+    }).exec();
+   console.log(totalStudents,totalSubmitted);
+    res.status(200).json({ data: results, totalSubmitted, totalStudents });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Internal server error" });
@@ -1463,6 +1459,50 @@ app.get("/activity-data", (req, res) => {
       res.status(500).json({ error: "Internal Server Error" });
     });
 });
+
+app.get("/getScatterGraphforALLTEST/:selectedSubject", async (req, res) => {
+  const selectedSubject = req.params.selectedSubject;
+  try {
+    // Retrieve all test results for the selected subject
+    const testResults = await UserTestResult.find({
+      subject: selectedSubject,
+    });
+
+    // Calculate the average percentage score for each test
+    const averageScores = {};
+    testResults.forEach((result) => {
+      if (!averageScores[result.testname]) {
+        averageScores[result.testname] = {
+          totalStudents: 0,
+          totalPercentageScore: 0,
+        };
+      }
+      averageScores[result.testname].totalStudents++;
+      averageScores[result.testname].totalPercentageScore +=
+        result.percentageScore;
+    });
+
+    // Calculate the average percentage score for each test
+    const scatterGraphData = [];
+    Object.keys(averageScores).forEach((testname) => {
+      const averagePercentageScore =
+        averageScores[testname].totalPercentageScore /
+        averageScores[testname].totalStudents;
+      scatterGraphData.push({
+        testname,
+        percentageScore: averagePercentageScore,
+      });
+    });
+
+    res.json(scatterGraphData);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+
 // app.post("/editStudentScore/:selectedResultID", async (req,res) => {
 //   const selectedResultID = req.params.selectedResultID;
 //   const userResults= req.body.score;
