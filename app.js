@@ -524,13 +524,20 @@ app.get("/searchUsers", async (req, res) => {
 
 
 app.delete("/deleteUser", async  (req,res) => {
-   const {userid} = req.body;
+   const {userid ,email, reason} = req.body;
     try {
         await User.findByIdAndDelete({ _id: userid });
+
+        const message = {
+          from: process.env.USER,
+          to: email,
+          subject: "User Deletion",
+          text: `Your user account has been rejected. Reason: ${reason}`,
+        };
+
+        await sendEmail(message);
         
         res.send({ status: "Ok", data: "Deleted" });
-        //res.send({status : "User Deleted!!"});
-        //res.send({ status: "OK" , data : "Deleted" });
     } catch (error) {
         console.log(error);
     }
